@@ -269,6 +269,26 @@ MAILER_MAIL_ATTACHMENTS=fail        # fail | ignore
 MAILER_MAIL_IDEMPOTENCY=content     # content | random | off
 ```
 
+### Laravel integration — Facade
+
+The package also registers a `Mailer` facade (auto-registered via package
+discovery) that proxies the same container-bound `MailerClient` singleton,
+configured via the `mailer-sdk` config / env shown above.
+
+```php
+use Mailer\Sdk\Laravel\Facades\Mailer;
+
+Mailer::contacts()->list();
+Mailer::send()->email([
+    'to' => 'jane@example.com',
+    'subject' => 'Hello',
+    'body' => '<p>Hi</p>',
+]);
+```
+
+The facade resolves the very same singleton you would inject via
+`MailerClient` — no separate configuration is needed.
+
 ## Laravel integration — Mail transport
 
 The package registers a `mailer` mail driver, so you can route Laravel's `Mail`

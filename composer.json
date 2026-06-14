@@ -37,7 +37,10 @@
         "laravel": {
             "providers": [
                 "Mailer\\Sdk\\Laravel\\MailerServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "Mailer": "Mailer\\Sdk\\Laravel\\Facades\\Mailer"
+            }
         }
     },
     "config": {
