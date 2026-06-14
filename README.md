@@ -1,26 +1,67 @@
 # Mailer PHP SDK
 
 Official PHP SDK for the **Mailer** REST API v1. It wraps the transactional
-send, contacts, lists, tags, templates, messages and campaigns endpoints behind typed
-resources and readonly DTOs, with first-class error handling and idempotency
-support.
+send, contacts, lists, tags, templates, messages and campaigns endpoints behind
+typed resources and readonly DTOs, with first-class error handling and
+idempotency support — plus an optional, batteries-included Laravel integration.
 
-- PHP >= 8.2
-- Guzzle ^7 (the only runtime dependency)
-- Optional Laravel auto-discovery (works in plain PHP without `illuminate/*`)
+## Features
+
+- Typed resources + readonly DTOs over the full Mailer API v1 surface (send,
+  contacts, lists, tags, templates, messages, read-only campaigns).
+- A precise exception hierarchy with machine `code` branching.
+- Automatic, idempotency-safe retries with exponential backoff.
+- Lazy pagination via `cursor()` generators (no page bookkeeping).
+- Per-send idempotency keys to make retries duplicate-free.
+- Optional Laravel integration (auto-discovered): a `mailer` mail transport, a
+  `mailer` notification channel and a `Mailer` facade.
+- Zero required dependencies beyond Guzzle; the core works in plain PHP without
+  any Illuminate package installed.
+
+## Requirements
+
+- PHP `>= 8.2`
+- `guzzlehttp/guzzle` `^7` (the only runtime dependency)
+- Laravel `^11.0 || ^12.0 || ^13.0` — **optional**, only for the Laravel
+  integration (mail transport, notification channel, facade). The core SDK runs
+  fine without it.
 
 ## Installation
 
-This package lives inside the Mailer monorepo. Until it is published to
-Packagist, install it via a Composer **path repository**:
+> **Placeholder.** Replace `git@github.com:your-org/mailer-php.git` below with
+> the real standalone repository URL (see [`PUBLISHING.md`](PUBLISHING.md) for
+> how the package is split out of the monorepo into its own repo).
 
-```jsonc
+### (a) Composer VCS (private repo)
+
+Add the standalone repository to your app's `composer.json`:
+
+```json
+"repositories": [
+    { "type": "vcs", "url": "git@github.com:your-org/mailer-php.git" }
+]
+```
+
+Then require it:
+
+```bash
+composer require mailer/mailer-php:^1.0
+```
+
+Before the first tag exists you can require the default branch with
+`composer require "mailer/mailer-php:dev-main"`. Private repos need Git read
+access (an SSH deploy key or an HTTPS Composer token). See
+[`PUBLISHING.md`](PUBLISHING.md) for details.
+
+### (b) Path repository (monorepo development)
+
+When developing inside the Mailer monorepo, point Composer at the package
+directory with a **path repository**:
+
+```json
 {
     "repositories": [
-        {
-            "type": "path",
-            "url": "sdk/php"
-        }
+        { "type": "path", "url": "sdk/php" }
     ],
     "require": {
         "mailer/mailer-php": "*"
@@ -32,11 +73,7 @@ Packagist, install it via a Composer **path repository**:
 composer require mailer/mailer-php
 ```
 
-Once published (Packagist or a private VCS repository), drop the
-`repositories` block and require it by version constraint as usual. For a
-private Git host use a `"type": "vcs"` repository pointing at the SDK repo.
-
-## Quick start (plain PHP)
+## Plain PHP usage
 
 ```php
 use Mailer\Sdk\MailerClient;
@@ -174,12 +211,12 @@ foreach ($client->contacts()->cursor(['status' => 'subscribed']) as $contact) {
 }
 
 // Available cursors (each yields the same DTOs as the matching list()):
-$client->contacts()->cursor($query);          // Contact
-$client->messages()->cursor($query);          // Message
-$client->campaigns()->cursor($query);         // Campaign
-$client->lists()->cursor($query);             // ContactList
+$client->contacts()->cursor($query);           // Contact
+$client->messages()->cursor($query);           // Message
+$client->campaigns()->cursor($query);          // Campaign
+$client->lists()->cursor($query);              // ContactList
 $client->lists()->contactsCursor($id, $query); // Contact
-$client->templates()->cursor($query);         // Template
+$client->templates()->cursor($query);          // Template
 ```
 
 A `cursor()` returns a plain `\Generator` (the core SDK never depends on
@@ -194,7 +231,7 @@ LazyCollection::make($client->contacts()->cursor())
     ->each(fn ($contact) => /* ... */);
 ```
 
-## Resilience
+### Resilience (automatic retries)
 
 When you let the SDK build its own HTTP client (the default — you do not inject
 a Guzzle client), it installs an automatic retry middleware with exponential
@@ -233,17 +270,75 @@ $client = new MailerClient(
 When you inject your own Guzzle client it is used **as-is** — add the retry
 middleware yourself via `Mailer\Sdk\Http\RetryMiddleware::make()` if you want it.
 
-## Laravel usage
+### Error handling
 
-The package is auto-discovered. Publish the config and set the env vars:
+Every non-2xx response is mapped to a typed exception. All exceptions extend
+`Mailer\Sdk\Exception\MailerException` and expose:
+
+- `getErrorCode(): ?string` — the machine `code` field
+- `getStatus(): ?int` — the HTTP status
+- `getBody(): ?array` — the raw decoded response envelope
+- `getMessage(): string` — the human-facing message (standard `\Exception`)
+
+| Exception                 | HTTP status | Notes |
+| ------------------------- | ----------- | ----- |
+| `AuthenticationException` | 401         | Missing/invalid/expired token. |
+| `NotFoundException`       | 404         | e.g. `contact_not_found`, `template_not_found`, `message_not_found`. |
+| `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, ...). Adds `errors(): array` (field => messages). |
+| `RateLimitException`      | 429         | Adds `retryAfter(): ?int` parsed from the `Retry-After` header. |
+| `MailerException`         | any other   | Base class; also the catch-all for unexpected non-2xx statuses. |
+
+```php
+use Mailer\Sdk\Exception\ValidationException;
+use Mailer\Sdk\Exception\RateLimitException;
+use Mailer\Sdk\Exception\MailerException;
+
+try {
+    $client->send()->email(['to' => 'jane@example.com', 'template' => 'welcome']);
+} catch (ValidationException $e) {
+    if ($e->getErrorCode() === 'recipient_suppressed') {
+        // address is on the suppression list — skip it
+    }
+    $fieldErrors = $e->errors(); // ['to' => ['The to field is required.'], ...]
+} catch (RateLimitException $e) {
+    sleep($e->retryAfter() ?? 1);
+    // ...retry
+} catch (MailerException $e) {
+    report($e);
+}
+```
+
+## Laravel integration
+
+The package is auto-discovered (no manual provider/alias registration). It
+registers a container-bound `MailerClient` singleton, a `Mailer` facade, a
+`mailer` mail transport and a `mailer` notification channel — all driven by the
+same `mailer-sdk` config.
+
+### Configuration
+
+Publish the config file:
 
 ```bash
 php artisan vendor:publish --tag=mailer-sdk-config
 ```
 
+Then set the env vars (every key below maps to `config/mailer-sdk.php`):
+
 ```dotenv
+# Connection
 MAILER_BASE_URL=https://app.example.com/api/v1
 MAILER_API_TOKEN=your-project-api-key
+
+# HTTP transport / resilience
+MAILER_TIMEOUT=10
+MAILER_RETRIES=2
+MAILER_RETRY_BASE_DELAY=200
+MAILER_RETRY_MAX_DELAY=5000
+
+# Mail transport behavior
+MAILER_MAIL_ATTACHMENTS=fail        # fail | ignore
+MAILER_MAIL_IDEMPOTENCY=content     # content | random | off
 ```
 
 Resolve the client from the container:
@@ -257,45 +352,17 @@ public function __construct(private MailerClient $mailer) {}
 $this->mailer->send()->email([...]);
 ```
 
-The published config also exposes the HTTP resilience knobs (wired into the
-container-bound client automatically) and the mail-transport options:
+The resilience knobs (`MAILER_TIMEOUT`, `MAILER_RETRIES`,
+`MAILER_RETRY_BASE_DELAY`, `MAILER_RETRY_MAX_DELAY`) are wired into the
+container-bound client automatically.
 
-```dotenv
-MAILER_TIMEOUT=10
-MAILER_RETRIES=2
-MAILER_RETRY_BASE_DELAY=200
-MAILER_RETRY_MAX_DELAY=5000
-MAILER_MAIL_ATTACHMENTS=fail        # fail | ignore
-MAILER_MAIL_IDEMPOTENCY=content     # content | random | off
-```
-
-### Laravel integration — Facade
-
-The package also registers a `Mailer` facade (auto-registered via package
-discovery) that proxies the same container-bound `MailerClient` singleton,
-configured via the `mailer-sdk` config / env shown above.
-
-```php
-use Mailer\Sdk\Laravel\Facades\Mailer;
-
-Mailer::contacts()->list();
-Mailer::send()->email([
-    'to' => 'jane@example.com',
-    'subject' => 'Hello',
-    'body' => '<p>Hi</p>',
-]);
-```
-
-The facade resolves the very same singleton you would inject via
-`MailerClient` — no separate configuration is needed.
-
-## Laravel integration — Mail transport
+### Mail transport (`MAIL_MAILER=mailer`)
 
 The package registers a `mailer` mail driver, so you can route Laravel's `Mail`
 facade (and notifications, queued mailers, etc.) through the platform `/send`
 API without changing any mailing code.
 
-Point Laravel at it. Add a mailer entry to `config/mail.php`:
+Add a mailer entry to `config/mail.php`:
 
 ```php
 'mailers' => [
@@ -326,7 +393,7 @@ The transport maps the message to a single `/send` call (one recipient) or a
 `/send/batch` call (multiple recipients), reading the subject, HTML body and
 text body off the message.
 
-### Sending with a stored template
+#### Sending with a stored template
 
 To render a platform template by slug instead of inline HTML, set the template
 headers on the underlying Symfony message from your Mailable. The transport then
@@ -354,7 +421,7 @@ class WelcomeMail extends Mailable
 }
 ```
 
-### Limitations & behavior
+#### Behavior & limitations
 
 The platform `/send` API is intentionally narrow; the transport adapts to it
 with explicit, documented behavior rather than silent surprises.
@@ -364,11 +431,12 @@ with explicit, documented behavior rather than silent surprises.
   `default_from_email`/`default_from_name` and a verified sending domain in the
   dashboard). A `From` set on the message is logged at debug level and dropped.
 - **Attachments are not supported.** The `/send` API has no attachment field.
-  By default (`mailer-sdk.mail.attachments = 'fail'`) a message carrying an
-  attachment throws `Mailer\Sdk\Exception\UnsupportedFeatureException`, so the
-  send fails loudly and you fix the Mailable. Set it to `'ignore'` to log a
-  warning and send the message *without* the attachments. Attachments are never
-  dropped silently in `'fail'` mode.
+  By default (`mailer-sdk.mail.attachments = 'fail'`, env
+  `MAILER_MAIL_ATTACHMENTS`) a message carrying an attachment throws
+  `Mailer\Sdk\Exception\UnsupportedFeatureException`, so the send fails loudly
+  and you fix the Mailable. Set it to `'ignore'` to log a warning and send the
+  message *without* the attachments. Attachments are never dropped silently in
+  `'fail'` mode.
 - **Suppressed recipients are not failures.** When the platform rejects an
   address as suppressed (`recipient_suppressed`), the transport does **not**
   throw: it logs a warning and dispatches a
@@ -385,7 +453,8 @@ with explicit, documented behavior rather than silent surprises.
   delivery list; each recipient is sent its own copy via `/send/batch` (the
   message content is shared, the `to` differs per item).
 - **Idempotency is automatic and retry-safe.** Per send the transport sets an
-  `Idempotency-Key`:
+  `Idempotency-Key` derived from `mailer-sdk.mail.idempotency` (env
+  `MAILER_MAIL_IDEMPOTENCY`):
   - `content` (default): a deterministic hash of the message content, so a
     requeued job never duplicates the send. Two genuinely identical messages
     sent within the platform's idempotency window dedup — switch to `random` if
@@ -395,7 +464,7 @@ with explicit, documented behavior rather than silent surprises.
   Override per message with the `X-Mailer-Idempotency-Key`
   (`MailerHeaders::IDEMPOTENCY_KEY`) header.
 
-### Laravel integration — Notification channel
+### Notification channel
 
 The SDK also registers a `mailer` **notification channel**, so a Notification
 can deliver through the platform `/send` API by returning `['mailer']` from
@@ -464,49 +533,32 @@ class OrderShipped extends Notification
 }
 ```
 
-## Error handling
+### Facade
 
-Every non-2xx response is mapped to a typed exception. All exceptions extend
-`Mailer\Sdk\Exception\MailerException` and expose:
-
-- `getErrorCode(): ?string` — the machine `code` field
-- `getStatus(): ?int` — the HTTP status
-- `getBody(): ?array` — the raw decoded response envelope
-- `getMessage(): string` — the human-facing message (standard `\Exception`)
-
-| Exception                 | HTTP status | Notes |
-| ------------------------- | ----------- | ----- |
-| `AuthenticationException` | 401         | Missing/invalid/expired token. |
-| `NotFoundException`       | 404         | e.g. `contact_not_found`, `template_not_found`, `message_not_found`. |
-| `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, ...). Adds `errors(): array` (field => messages). |
-| `RateLimitException`      | 429         | Adds `retryAfter(): ?int` parsed from the `Retry-After` header. |
-| `MailerException`         | any other   | Base class; also the catch-all for unexpected non-2xx statuses. |
+The package registers a `Mailer` facade (auto-registered via package discovery)
+that proxies the same container-bound `MailerClient` singleton — no separate
+configuration is needed:
 
 ```php
-use Mailer\Sdk\Exception\ValidationException;
-use Mailer\Sdk\Exception\RateLimitException;
-use Mailer\Sdk\Exception\MailerException;
+use Mailer\Sdk\Laravel\Facades\Mailer;
 
-try {
-    $client->send()->email(['to' => 'jane@example.com', 'template' => 'welcome']);
-} catch (ValidationException $e) {
-    if ($e->getErrorCode() === 'recipient_suppressed') {
-        // address is on the suppression list — skip it
-    }
-    $fieldErrors = $e->errors(); // ['to' => ['The to field is required.'], ...]
-} catch (RateLimitException $e) {
-    sleep($e->retryAfter() ?? 1);
-    // ...retry
-} catch (MailerException $e) {
-    report($e);
-}
+Mailer::contacts()->list();
+Mailer::send()->email([
+    'to' => 'jane@example.com',
+    'subject' => 'Hello',
+    'body' => '<p>Hi</p>',
+]);
 ```
 
-## Development
+## Contributing / Development
 
 ```bash
 composer install
-vendor/bin/phpunit
+composer test        # alias for: vendor/bin/phpunit
 ```
 
 Tests run entirely against a Guzzle `MockHandler` — no network access required.
+
+For how this package is split out of the monorepo into its own repository,
+tagged with SemVer and consumed via a private Composer VCS repo, see
+[`PUBLISHING.md`](PUBLISHING.md).

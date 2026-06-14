@@ -1,0 +1,11 @@
+# Keep the Composer dist tarball lean: ship only what consumers need
+# (src, config, composer.json, README.md, LICENSE) and export-ignore the
+# dev-only paths below.
+/tests              export-ignore
+/phpunit.xml.dist   export-ignore
+/.gitattributes     export-ignore
+/.gitignore         export-ignore
+/.github            export-ignore
+/.phpunit.cache     export-ignore
+/CHANGELOG.md       export-ignore
+/PUBLISHING.md      export-ignore
