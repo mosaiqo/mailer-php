@@ -375,6 +375,75 @@ with explicit, documented behavior rather than silent surprises.
   Override per message with the `X-Mailer-Idempotency-Key`
   (`MailerHeaders::IDEMPOTENCY_KEY`) header.
 
+### Laravel integration — Notification channel
+
+The SDK also registers a `mailer` **notification channel**, so a Notification
+can deliver through the platform `/send` API by returning `['mailer']` from
+`via()` and defining `toMailer($notifiable)`.
+
+`toMailer()` returns a `Mailer\Sdk\Laravel\Mail\MailerMessage` for full control.
+**Inline mode** uses `subject()`/`html()`/`text()`:
+
+```php
+use Mailer\Sdk\Laravel\Mail\MailerMessage;
+
+public function toMailer($notifiable): MailerMessage
+{
+    return (new MailerMessage)
+        ->subject('Your order shipped')
+        ->html('<p>It is on the way.</p>')
+        ->text('It is on the way.');
+}
+```
+
+**Template mode** renders a stored template with per-recipient variables:
+
+```php
+return (new MailerMessage)
+    ->template('order-shipped')
+    ->variables(['name' => $notifiable->name]);
+```
+
+**Recipient routing precedence:** an explicit `MailerMessage::to()` wins, then
+`routeNotificationFor('mailer')`, then `routeNotificationFor('mail')`, then a
+public `$email` property on the notifiable.
+
+**Other return types** are accepted too: a plain `/send` payload `array` is used
+directly (its `to`/`idempotency_key` keys are honored), and an
+`Illuminate\Contracts\Mail\Mailable` is rendered to its subject + HTML only —
+return a `MailerMessage` for templates, a text part or an explicit idempotency
+key.
+
+The outcome semantics mirror the transport: a **suppressed recipient is not a
+failure** — a `Mailer\Sdk\Laravel\Events\MessageSuppressed` event is dispatched
+and the send is skipped — while quota / sending-domain / any other API error is
+rethrown so Laravel marks the notification failed and retries per your queue
+policy.
+
+A complete notification:
+
+```php
+use Illuminate\Notifications\Notification;
+use Mailer\Sdk\Laravel\Mail\MailerMessage;
+
+class OrderShipped extends Notification
+{
+    public function via($notifiable): array
+    {
+        return ['mailer'];
+    }
+
+    public function toMailer($notifiable): MailerMessage
+    {
+        return (new MailerMessage)
+            ->subject('Your order shipped')
+            ->html('<p>It is on the way.</p>');
+        // Or a stored template:
+        // return (new MailerMessage)->template('order-shipped')->variables(['name' => $notifiable->name]);
+    }
+}
+```
+
 ## Error handling
 
 Every non-2xx response is mapped to a typed exception. All exceptions extend

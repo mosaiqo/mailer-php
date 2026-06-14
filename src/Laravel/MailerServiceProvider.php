@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Mailer\Sdk\Laravel;
 
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
 use Mailer\Sdk\Laravel\Mail\MailerTransport;
+use Mailer\Sdk\Laravel\Notifications\MailerChannel;
 use Mailer\Sdk\MailerClient;
 
 /**
@@ -48,6 +50,7 @@ final class MailerServiceProvider extends ServiceProvider
         }
 
         $this->registerMailTransport();
+        $this->registerNotificationChannel();
     }
 
     /**
@@ -68,6 +71,28 @@ final class MailerServiceProvider extends ServiceProvider
                 $this->app->make(Dispatcher::class),
                 $this->app->make('log'),
             );
+        });
+    }
+
+    /**
+     * Register the "mailer" notification channel so a Notification's via() can
+     * return ['mailer'] and deliver through the platform /send API.
+     */
+    private function registerNotificationChannel(): void
+    {
+        if (! class_exists(ChannelManager::class)) {
+            return;
+        }
+
+        $this->app->resolving(ChannelManager::class, function (ChannelManager $manager): void {
+            $manager->extend('mailer', function ($app): MailerChannel {
+                return new MailerChannel(
+                    $app->make(MailerClient::class),
+                    (array) $app['config']->get('mailer-sdk.mail', []),
+                    $app->make(Dispatcher::class),
+                    $app->make('log'),
+                );
+            });
         });
     }
 }

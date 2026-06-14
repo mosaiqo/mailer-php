@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Mailer\Sdk\Laravel\Mail;
 
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Support\Str;
 use Mailer\Sdk\Dto\BatchResult;
 use Mailer\Sdk\Exception\MailerException;
-use Mailer\Sdk\Exception\UnsupportedFeatureException;
 use Mailer\Sdk\Exception\ValidationException;
 use Mailer\Sdk\Laravel\Events\MessageSuppressed;
 use Mailer\Sdk\MailerClient;
@@ -72,9 +70,9 @@ final class MailerTransport extends AbstractTransport
             return;
         }
 
-        $base = $this->basePayload($email);
+        $base = PayloadMapper::base($email, $this->config, $this->transportLogger);
 
-        $key = $this->idempotencyKey($email, $base);
+        $key = IdempotencyKey::compute($base, $this->config, $this->header($email, MailerHeaders::IDEMPOTENCY_KEY));
 
         if (count($recipients) === 1) {
             $this->sendSingle($recipients[0], $base, $key);
@@ -103,121 +101,6 @@ final class MailerTransport extends AbstractTransport
         ));
     }
 
-    /**
-     * Build the content payload shared by every recipient (the `to` key is
-     * filled in per recipient at send time). Either a template payload (when
-     * the X-Mailer-Template header is present) or an inline subject/body one.
-     *
-     * @return array<string, mixed>
-     */
-    private function basePayload(Email $email): array
-    {
-        $this->guardAttachments($email);
-        $this->warnIfFromIsSet($email);
-
-        $template = $this->header($email, MailerHeaders::TEMPLATE);
-
-        if ($template !== null) {
-            return [
-                'template' => $template,
-                'variables' => $this->variables($email),
-            ];
-        }
-
-        $html = $email->getHtmlBody();
-        $text = $email->getTextBody();
-
-        $payload = [
-            'subject' => (string) $email->getSubject(),
-            // The API requires `body`; fall back to the text body when the
-            // message is text-only so a plain Mail::raw() still goes out.
-            'body' => $this->stringBody($html) ?? $this->stringBody($text) ?? '',
-        ];
-
-        $textBody = $this->stringBody($text);
-
-        if ($textBody !== null) {
-            $payload['text'] = $textBody;
-        }
-
-        $variables = $this->variables($email);
-
-        if ($variables !== []) {
-            $payload['variables'] = $variables;
-        }
-
-        return $payload;
-    }
-
-    /**
-     * Symfony body parts can be strings or resources; normalize to a string.
-     */
-    private function stringBody(mixed $body): ?string
-    {
-        if ($body === null) {
-            return null;
-        }
-
-        if (is_resource($body)) {
-            $contents = stream_get_contents($body);
-
-            return $contents === false ? null : $contents;
-        }
-
-        return (string) $body;
-    }
-
-    private function guardAttachments(Email $email): void
-    {
-        if ($email->getAttachments() === []) {
-            return;
-        }
-
-        $mode = (string) ($this->config['attachments'] ?? 'fail');
-
-        if ($mode === 'ignore') {
-            $this->transportLogger?->warning(
-                'Mailer SDK transport: dropping attachments — the platform /send API does not support them.',
-            );
-
-            return;
-        }
-
-        throw new UnsupportedFeatureException(
-            'The Mailer platform /send API does not support attachments. '
-            .'Remove the attachment from the Mailable, or set mailer-sdk.mail.attachments to "ignore" '
-            .'to send the message without it.',
-        );
-    }
-
-    private function warnIfFromIsSet(Email $email): void
-    {
-        if ($email->getFrom() !== []) {
-            $this->transportLogger?->debug(
-                'Mailer SDK transport: ignoring the message From address; the platform uses the '
-                ."project's configured sender.",
-            );
-        }
-    }
-
-    /**
-     * Decode the X-Mailer-Variables JSON header into an associative array.
-     *
-     * @return array<string, mixed>
-     */
-    private function variables(Email $email): array
-    {
-        $raw = $this->header($email, MailerHeaders::VARIABLES);
-
-        if ($raw === null || $raw === '') {
-            return [];
-        }
-
-        $decoded = json_decode($raw, true);
-
-        return is_array($decoded) ? $decoded : [];
-    }
-
     private function header(Email $email, string $name): ?string
     {
         $header = $email->getHeaders()->get($name);
@@ -227,53 +110,6 @@ final class MailerTransport extends AbstractTransport
         }
 
         return $header->getBodyAsString();
-    }
-
-    /**
-     * Resolve the idempotency key for this send. An explicit header wins;
-     * otherwise the configured strategy decides (content hash / random / off).
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function idempotencyKey(Email $email, array $payload): ?string
-    {
-        $explicit = $this->header($email, MailerHeaders::IDEMPOTENCY_KEY);
-
-        if ($explicit !== null && $explicit !== '') {
-            return $explicit;
-        }
-
-        $strategy = (string) ($this->config['idempotency'] ?? 'content');
-
-        return match ($strategy) {
-            'random' => Str::uuid()->toString(),
-            'off' => null,
-            default => $this->contentKey($payload),
-        };
-    }
-
-    /**
-     * Deterministic key derived from the canonical content, so a queue retry of
-     * the same job never duplicates the send.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function contentKey(array $payload): string
-    {
-        $canonical = [
-            'subject' => $payload['subject'] ?? null,
-            'body' => $payload['body'] ?? null,
-            'text' => $payload['text'] ?? null,
-            'template' => $payload['template'] ?? null,
-            'variables' => $payload['variables'] ?? null,
-        ];
-
-        ksort($canonical);
-
-        $hash = hash('sha256', (string) json_encode($canonical));
-
-        // Prefix + truncate well under the API's 255-char idempotency key limit.
-        return 'txn_'.substr($hash, 0, 60);
     }
 
     /**
