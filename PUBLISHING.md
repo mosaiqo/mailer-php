@@ -119,3 +119,18 @@ Notes:
   ```
 
   Switch to `^1.0` once `v1.0.0` is tagged.
+
+## Automated distribution
+
+The manual split above is mirrored by CI. Pushes to the `main` branch that
+touch `sdk/php/**` automatically sync the `main` branch of
+`mosaiqo/mailer-php` via a `git subtree split` GitHub Actions workflow — no
+manual split/push needed for routine SDK changes.
+
+To cut a SemVer release, run the GitHub Actions workflow named
+**"Split SDK to mosaiqo/mailer-php"** with `workflow_dispatch` and provide the
+`tag` input (e.g. `v1.1.0`); the workflow tags the split branch on
+`mosaiqo/mailer-php` and pushes the tag.
+
+The workflow requires the `MAILER_PHP_DEPLOY_KEY` repository secret — an SSH
+deploy key with write access to `mosaiqo/mailer-php`.
