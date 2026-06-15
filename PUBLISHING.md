@@ -4,9 +4,9 @@ This package lives inside the Mailer monorepo at `sdk/php/`, but it is consumed
 as a **standalone Composer package**. This document describes how to split it
 out into its own Git repository and how downstream apps require it.
 
-> **Placeholder.** Every `your-org` / `git@github.com:your-org/mailer-php.git`
-> below is a placeholder. Replace it with the real standalone repository before
-> running any command.
+> The standalone repository is `git@github.com:mosaiqo/mailer-php.git`
+> (web: <https://github.com/mosaiqo/mailer-php>), used throughout the commands
+> below.
 
 ## Why a subtree split?
 
@@ -28,7 +28,7 @@ Run from the monorepo root:
 git subtree split --prefix=sdk/php -b sdk-php-split
 
 # Push that branch as `main` on the standalone repo.
-git push git@github.com:your-org/mailer-php.git sdk-php-split:main
+git push git@github.com:mosaiqo/mailer-php.git sdk-php-split:main
 ```
 
 `--prefix=sdk/php` is the load-bearing flag: it is what makes
@@ -41,7 +41,7 @@ branch.
 internal split cache, so re-runs are incremental):
 
 ```bash
-git subtree push --prefix=sdk/php git@github.com:your-org/mailer-php.git main
+git subtree push --prefix=sdk/php git@github.com:mosaiqo/mailer-php.git main
 ```
 
 ### Full-history rewrite alternative
@@ -54,7 +54,7 @@ paths (smaller, rewritten hashes), use
 ```bash
 git clone <monorepo> mailer-php && cd mailer-php
 git filter-repo --subdirectory-filter sdk/php
-git remote add origin git@github.com:your-org/mailer-php.git
+git remote add origin git@github.com:mosaiqo/mailer-php.git
 git push -u origin main
 ```
 
@@ -95,14 +95,14 @@ standalone repo as a Composer **VCS repository** in its own `composer.json`:
 
 ```json
 "repositories": [
-    { "type": "vcs", "url": "git@github.com:your-org/mailer-php.git" }
+    { "type": "vcs", "url": "git@github.com:mosaiqo/mailer-php.git" }
 ]
 ```
 
 Then require it by version constraint:
 
 ```bash
-composer require mailer/mailer-php:^1.0
+composer require mosaiqo/mailer-php:^1.0
 ```
 
 Notes:
@@ -115,7 +115,7 @@ Notes:
   `dev-` constraint:
 
   ```bash
-  composer require "mailer/mailer-php:dev-main"
+  composer require "mosaiqo/mailer-php:dev-main"
   ```
 
   Switch to `^1.0` once `v1.0.0` is tagged.

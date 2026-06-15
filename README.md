@@ -28,9 +28,9 @@ idempotency support — plus an optional, batteries-included Laravel integration
 
 ## Installation
 
-> **Placeholder.** Replace `git@github.com:your-org/mailer-php.git` below with
-> the real standalone repository URL (see [`PUBLISHING.md`](PUBLISHING.md) for
-> how the package is split out of the monorepo into its own repo).
+> The standalone repository is `git@github.com:mosaiqo/mailer-php.git` (see
+> [`PUBLISHING.md`](PUBLISHING.md) for how the package is split out of the
+> monorepo into its own repo).
 
 ### (a) Composer VCS (private repo)
 
@@ -38,18 +38,18 @@ Add the standalone repository to your app's `composer.json`:
 
 ```json
 "repositories": [
-    { "type": "vcs", "url": "git@github.com:your-org/mailer-php.git" }
+    { "type": "vcs", "url": "git@github.com:mosaiqo/mailer-php.git" }
 ]
 ```
 
 Then require it:
 
 ```bash
-composer require mailer/mailer-php:^1.0
+composer require mosaiqo/mailer-php:^1.0
 ```
 
 Before the first tag exists you can require the default branch with
-`composer require "mailer/mailer-php:dev-main"`. Private repos need Git read
+`composer require "mosaiqo/mailer-php:dev-main"`. Private repos need Git read
 access (an SSH deploy key or an HTTPS Composer token). See
 [`PUBLISHING.md`](PUBLISHING.md) for details.
 
@@ -64,13 +64,13 @@ directory with a **path repository**:
         { "type": "path", "url": "sdk/php" }
     ],
     "require": {
-        "mailer/mailer-php": "*"
+        "mosaiqo/mailer-php": "*"
     }
 }
 ```
 
 ```bash
-composer require mailer/mailer-php
+composer require mosaiqo/mailer-php
 ```
 
 ## Plain PHP usage
