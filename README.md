@@ -73,6 +73,98 @@ directory with a **path repository**:
 composer require mosaiqo/mailer-php
 ```
 
+## Quick start: integrate into a Laravel app
+
+The full, copy-pasteable recipe to route a real Laravel app's email through a
+mailer-app instance. (Detailed behavior and options are documented further
+down.)
+
+**1. Add the private repo and require the package.** In your app's
+`composer.json`:
+
+```json
+"repositories": [
+    { "type": "vcs", "url": "git@github.com:mosaiqo/mailer-php.git" }
+]
+```
+
+```bash
+composer require mosaiqo/mailer-php:^1.0
+```
+
+> **Private repo — deployed apps need Git read access.** `mosaiqo/mailer-php`
+> is private, so `composer install` on a build/deploy server must be able to
+> read it over SSH. Add a **deploy key** (a read-only SSH key registered on the
+> `mosaiqo/mailer-php` repo) or a **machine user** to the deploy environment,
+> or configure an HTTPS Composer auth token. Local dev just needs your own SSH
+> access to the repo.
+
+**2. Set the environment variables.**
+
+```dotenv
+# Route Laravel's Mail facade through the platform /send API
+MAIL_MAILER=mailer
+
+# Connection (both are REQUIRED — there is no default; a missing/placeholder
+# value throws a MailerConfigurationException at boot instead of silently
+# sending to a dead host)
+MAILER_BASE_URL=https://<your-mailer-app-host>/api/v1
+MAILER_API_TOKEN=<your-project-API-key>
+```
+
+> **Where to get the API key.** In mailer-app, open **Settings → API keys** for
+> the project you want to send from and create a key (it is shown once — copy it
+> straight into `MAILER_API_TOKEN`). Keys are **per project**, so the key also
+> selects which project's sender, templates and contacts the sends use.
+
+**3. Add the `mailer` mailer to `config/mail.php`.**
+
+```php
+'mailers' => [
+    // ...existing mailers...
+    'mailer' => [
+        'transport' => 'mailer',
+    ],
+],
+```
+
+**4. Send.** Nothing else in your mailing code changes:
+
+```php
+use App\Mail\WelcomeMail;
+use Illuminate\Support\Facades\Mail;
+
+// A Mailable through the transport (MAIL_MAILER=mailer)
+Mail::to('jane@example.com')->send(new WelcomeMail($user));
+
+// A plain message
+Mail::raw('Hello world', fn ($m) => $m->to('jane@example.com')->subject('Hi'));
+```
+
+Or call the API client directly — e.g. to render a stored template by slug with
+per-recipient variables:
+
+```php
+use Mailer\Sdk\Laravel\Facades\Mailer;
+
+Mailer::send()->email([
+    'to' => 'jane@example.com',
+    'template' => 'welcome',           // template slug from mailer-app
+    'variables' => ['first_name' => 'Jane'],
+]);
+
+// ...or fully inline content
+Mailer::send()->email([
+    'to' => 'jane@example.com',
+    'subject' => 'Welcome aboard',
+    'body' => '<p>Hi {{ contact.first_name }}!</p>',
+    'text' => 'Hi!',
+]);
+```
+
+That is the whole integration. The rest of this document covers the SDK's full
+surface and the transport's detailed behavior.
+
 ## Plain PHP usage
 
 ```php
@@ -286,6 +378,8 @@ Every non-2xx response is mapped to a typed exception. All exceptions extend
 | `NotFoundException`       | 404         | e.g. `contact_not_found`, `template_not_found`, `message_not_found`. |
 | `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, ...). Adds `errors(): array` (field => messages). |
 | `RateLimitException`      | 429         | Adds `retryAfter(): ?int` parsed from the `Retry-After` header. |
+| `MailerConfigurationException` | — (local) | Missing/empty/placeholder base URL or empty token; thrown at client construction before any request. |
+| `UnsupportedFeatureException` | — (local) | The send relies on something the `/send` API has no field for (e.g. attachments). |
 | `MailerException`         | any other   | Base class; also the catch-all for unexpected non-2xx statuses. |
 
 ```php
@@ -326,7 +420,7 @@ php artisan vendor:publish --tag=mailer-sdk-config
 Then set the env vars (every key below maps to `config/mailer-sdk.php`):
 
 ```dotenv
-# Connection
+# Connection (REQUIRED — no default; see the fail-loud note below)
 MAILER_BASE_URL=https://app.example.com/api/v1
 MAILER_API_TOKEN=your-project-api-key
 
@@ -355,6 +449,13 @@ $this->mailer->send()->email([...]);
 The resilience knobs (`MAILER_TIMEOUT`, `MAILER_RETRIES`,
 `MAILER_RETRY_BASE_DELAY`, `MAILER_RETRY_MAX_DELAY`) are wired into the
 container-bound client automatically.
+
+> **Fail-loud connection config.** `MAILER_BASE_URL` and `MAILER_API_TOKEN`
+> have **no working default**. Constructing the client (resolving the
+> `MailerClient` singleton, or sending the first message) with an
+> unset/empty/placeholder base URL or an empty token throws a
+> `Mailer\Sdk\Exception\MailerConfigurationException` with a clear message,
+> instead of silently sending to a dead host. Set both before sending.
 
 ### Mail transport (`MAIL_MAILER=mailer`)
 

@@ -24,7 +24,7 @@ abstract class TestCase extends Orchestra
 
     protected function defineEnvironment($app): void
     {
-        $app['config']->set('mailer-sdk.base_url', 'https://api.mailer.test/api/v1');
+        $app['config']->set('mailer-sdk.base_url', 'https://mailer.example.com/api/v1');
         $app['config']->set('mailer-sdk.token', 'test-token');
         $app['config']->set('mail.default', 'mailer');
         $app['config']->set('mail.mailers.mailer', ['transport' => 'mailer']);

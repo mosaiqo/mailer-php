@@ -36,7 +36,7 @@ final class MailTransportWiringTest extends TestCase
         $this->assertCount(1, $history);
         $request = $history[0]['request'];
         $this->assertSame('POST', $request->getMethod());
-        $this->assertSame('https://api.mailer.test/api/v1/send', (string) $request->getUri());
+        $this->assertSame('https://mailer.example.com/api/v1/send', (string) $request->getUri());
 
         $payload = json_decode((string) $request->getBody(), true);
         $this->assertSame('jane@example.com', $payload['to']);
@@ -61,7 +61,7 @@ final class MailTransportWiringTest extends TestCase
 
         $this->app->instance(
             MailerClient::class,
-            new MailerClient('https://api.mailer.test/api/v1', 'test-token', $guzzle),
+            new MailerClient('https://mailer.example.com/api/v1', 'test-token', $guzzle),
         );
     }
 }

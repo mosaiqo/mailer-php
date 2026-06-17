@@ -41,7 +41,7 @@ final class MailerTransportTest extends TestCase
         $this->assertCount(1, $history);
         $request = $history[0]['request'];
         $this->assertSame('POST', $request->getMethod());
-        $this->assertSame('https://api.mailer.test/api/v1/send', (string) $request->getUri());
+        $this->assertSame('https://mailer.example.com/api/v1/send', (string) $request->getUri());
 
         $payload = $this->body($history, 0);
         $this->assertSame('jane@example.com', $payload['to']);
@@ -76,7 +76,7 @@ final class MailerTransportTest extends TestCase
 
         $transport->send($email);
 
-        $this->assertSame('https://api.mailer.test/api/v1/send/batch', (string) $history[0]['request']->getUri());
+        $this->assertSame('https://mailer.example.com/api/v1/send/batch', (string) $history[0]['request']->getUri());
 
         $payload = $this->body($history, 0);
         $this->assertCount(2, $payload['messages']);

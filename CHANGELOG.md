@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-17
+
+### Added
+
+- Integration guide in the README: a copy-paste recipe to wire the SDK into a
+  real Laravel app (private Composer VCS repo, `composer require`, env vars,
+  `config/mail.php` mailer entry, send examples, where to get the project API
+  key, and the deploy-time SSH read-access note for the private repo).
+- `MailerConfigurationException` (extends `MailerException`) — raised at client
+  construction on missing configuration.
+
+### Changed
+
+- **Fail-loud connection config (behavior change).** `MAILER_BASE_URL` no longer
+  has a working-looking default (`https://api.mailer.test/api/v1`). Constructing
+  the client with an unset/empty/placeholder base URL — or an empty
+  `MAILER_API_TOKEN` — now throws a `MailerConfigurationException` with a clear
+  message, instead of silently sending to a dead host. **Action required:** set
+  `MAILER_BASE_URL` (and `MAILER_API_TOKEN`) explicitly; a previously published
+  `config/mailer-sdk.php` still carrying the old default is rejected too.
+
+## [1.0.0]
+
 ### Added
 
 - Laravel mail transport driver (`MAIL_MAILER=mailer`) — route the `Mail`
@@ -23,4 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (wrappable in a Laravel `LazyCollection`).
 - Read-only campaigns resource (`campaigns()->list()` / `get()` with stats).
 
-[Unreleased]: https://github.com/mosaiqo/mailer-php/commits/main
+[Unreleased]: https://github.com/mosaiqo/mailer-php/compare/v1.1.0...main
+[1.1.0]: https://github.com/mosaiqo/mailer-php/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/mosaiqo/mailer-php/releases/tag/v1.0.0

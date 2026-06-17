@@ -37,7 +37,7 @@ final class MailerChannelTest extends TestCase
         $this->assertCount(1, $history);
         $request = $history[0]['request'];
         $this->assertSame('POST', $request->getMethod());
-        $this->assertSame('https://api.mailer.test/api/v1/send', (string) $request->getUri());
+        $this->assertSame('https://mailer.example.com/api/v1/send', (string) $request->getUri());
 
         $payload = $this->body($history, 0);
         $this->assertSame('jane@example.com', $payload['to']);

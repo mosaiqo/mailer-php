@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mailer\Sdk;
 
 use GuzzleHttp\ClientInterface;
+use Mailer\Sdk\Exception\MailerConfigurationException;
 use Mailer\Sdk\Http\HttpClient;
 use Mailer\Sdk\Resources\CampaignsResource;
 use Mailer\Sdk\Resources\ContactsResource;
@@ -21,6 +22,14 @@ use Mailer\Sdk\Resources\TemplatesResource;
  */
 final class MailerClient
 {
+    /**
+     * The placeholder host the SDK used to ship as a working-looking default.
+     * A base URL pointing at it is treated as "not configured" so a consumer
+     * who forgot to set MAILER_BASE_URL (or still has the old published
+     * default) fails loudly instead of silently sending to a dead host.
+     */
+    public const string PLACEHOLDER_BASE_URL_HOST = 'api.mailer.test';
+
     private readonly HttpClient $http;
 
     private ?SendResource $send = null;
@@ -50,7 +59,41 @@ final class MailerClient
         ?ClientInterface $httpClient = null,
         array $options = [],
     ) {
+        self::assertConfigured($baseUrl, $token);
+
         $this->http = new HttpClient(rtrim($baseUrl, '/'), $token, $httpClient, $options);
+    }
+
+    /**
+     * Fail loudly on missing/placeholder configuration before any request is
+     * ever made, so a misconfigured consumer gets a clear error instead of
+     * silently sending to a dead host (the old `api.mailer.test` default) or
+     * with an empty Bearer token.
+     *
+     * @throws MailerConfigurationException
+     */
+    private static function assertConfigured(string $baseUrl, string $token): void
+    {
+        if (trim($baseUrl) === '') {
+            throw new MailerConfigurationException(
+                'MAILER_BASE_URL is not configured; set it to your mailer-app /api/v1 endpoint '
+                .'(e.g. https://app.example.com/api/v1).',
+            );
+        }
+
+        if (str_contains($baseUrl, self::PLACEHOLDER_BASE_URL_HOST)) {
+            throw new MailerConfigurationException(
+                'MAILER_BASE_URL is still set to the placeholder "'.self::PLACEHOLDER_BASE_URL_HOST.'"; '
+                .'set it to your mailer-app /api/v1 endpoint (e.g. https://app.example.com/api/v1).',
+            );
+        }
+
+        if (trim($token) === '') {
+            throw new MailerConfigurationException(
+                'MAILER_API_TOKEN is not configured; set it to a project API key '
+                .'(mailer-app → Settings → API keys).',
+            );
+        }
     }
 
     public function send(): SendResource

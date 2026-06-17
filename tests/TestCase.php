@@ -17,7 +17,7 @@ abstract class TestCase extends BaseTestCase
     /**
      * The base URL used by the test client.
      */
-    protected string $baseUrl = 'https://api.mailer.test/api/v1';
+    protected string $baseUrl = 'https://mailer.example.com/api/v1';
 
     /**
      * The token used by the test client.

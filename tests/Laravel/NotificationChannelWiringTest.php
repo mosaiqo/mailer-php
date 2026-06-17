@@ -58,7 +58,7 @@ final class NotificationChannelWiringTest extends TestCase
         $this->assertCount(1, $history);
         $request = $history[0]['request'];
         $this->assertSame('POST', $request->getMethod());
-        $this->assertSame('https://api.mailer.test/api/v1/send', (string) $request->getUri());
+        $this->assertSame('https://mailer.example.com/api/v1/send', (string) $request->getUri());
     }
 
     /**
@@ -77,7 +77,7 @@ final class NotificationChannelWiringTest extends TestCase
 
         $this->app->instance(
             MailerClient::class,
-            new MailerClient('https://api.mailer.test/api/v1', 'test-token', $guzzle),
+            new MailerClient('https://mailer.example.com/api/v1', 'test-token', $guzzle),
         );
     }
 }

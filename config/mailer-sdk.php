@@ -11,8 +11,12 @@ return [
     | The fully qualified base URL of the Mailer REST API v1, including the
     | "/api/v1" suffix. A trailing slash is allowed and stripped internally.
     |
+    | Required: there is no working default. An unset/empty/placeholder value
+    | makes the MailerClient throw a MailerConfigurationException at
+    | construction rather than silently sending to a dead host.
+    |
     */
-    'base_url' => env('MAILER_BASE_URL', 'https://api.mailer.test/api/v1'),
+    'base_url' => env('MAILER_BASE_URL'),
 
     /*
     |--------------------------------------------------------------------------
