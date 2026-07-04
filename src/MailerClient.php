@@ -33,6 +33,13 @@ final class MailerClient
      */
     public const string PLACEHOLDER_BASE_URL_HOST = 'api.mailer.test';
 
+    /**
+     * The hosted API's base URL, used as the default when MAILER_BASE_URL is
+     * not set. Hosted consumers only need to configure MAILER_API_TOKEN;
+     * self-hosted consumers override MAILER_BASE_URL with their own endpoint.
+     */
+    public const string DEFAULT_BASE_URL = 'https://mailer.mosaiqo.com/api/v1';
+
     private readonly HttpClient $http;
 
     private ?SendResource $send = null;

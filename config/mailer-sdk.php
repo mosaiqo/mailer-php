@@ -11,12 +11,13 @@ return [
     | The fully qualified base URL of the Mailer REST API v1, including the
     | "/api/v1" suffix. A trailing slash is allowed and stripped internally.
     |
-    | Required: there is no working default. An unset/empty/placeholder value
-    | makes the MailerClient throw a MailerConfigurationException at
-    | construction rather than silently sending to a dead host.
+    | Optional for hosted users: it defaults to the hosted API, so you only
+    | need to set MAILER_API_TOKEN. Self-hosted users set MAILER_BASE_URL to
+    | their own endpoint. An explicitly empty or placeholder value still makes
+    | the MailerClient throw a MailerConfigurationException at construction.
     |
     */
-    'base_url' => env('MAILER_BASE_URL'),
+    'base_url' => env('MAILER_BASE_URL', \Mailer\Sdk\MailerClient::DEFAULT_BASE_URL),
 
     /*
     |--------------------------------------------------------------------------

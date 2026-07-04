@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `MAILER_BASE_URL` is now **optional** and defaults to the hosted API
+  (`https://mailer.mosaiqo.com/api/v1`), so hosted consumers only need to set
+  `MAILER_API_TOKEN`. Self-hosted consumers still set `MAILER_BASE_URL` to their
+  own endpoint. This relaxes part of the v1.1.0 fail-loud change: the token
+  stays required, and an explicitly empty or `api.mailer.test` placeholder base
+  URL still throws `MailerConfigurationException` at construction.
+
 ## [1.2.0] - 2026-07-04
 
 ### Added

@@ -83,11 +83,12 @@ composer require mosaiqo/mailer-php:^1.2
 # Route Laravel's Mail facade through the platform /send API
 MAIL_MAILER=mailer
 
-# Connection (both are REQUIRED — there is no default; a missing/placeholder
-# value throws a MailerConfigurationException at boot instead of silently
-# sending to a dead host)
-MAILER_BASE_URL=https://<your-mailer-app-host>/api/v1
+# Connection. MAILER_API_TOKEN is REQUIRED (a missing/empty token throws a
+# MailerConfigurationException at boot). MAILER_BASE_URL is OPTIONAL — it
+# defaults to the hosted API (https://mailer.mosaiqo.com/api/v1); set it only
+# if you self-host or point at another environment.
 MAILER_API_TOKEN=<your-project-API-key>
+# MAILER_BASE_URL=https://your-self-hosted-host/api/v1
 ```
 
 > **Where to get the API key.** In mailer-app, open **Settings → API keys** for
@@ -524,9 +525,10 @@ php artisan vendor:publish --tag=mailer-sdk-config
 Then set the env vars (every key below maps to `config/mailer-sdk.php`):
 
 ```dotenv
-# Connection (REQUIRED — no default; see the fail-loud note below)
-MAILER_BASE_URL=https://app.example.com/api/v1
+# Connection. MAILER_API_TOKEN is required; MAILER_BASE_URL is optional and
+# defaults to the hosted API (see the connection-config note below).
 MAILER_API_TOKEN=your-project-api-key
+# MAILER_BASE_URL=https://your-self-hosted-host/api/v1
 
 # HTTP transport / resilience
 MAILER_TIMEOUT=10
@@ -554,12 +556,12 @@ The resilience knobs (`MAILER_TIMEOUT`, `MAILER_RETRIES`,
 `MAILER_RETRY_BASE_DELAY`, `MAILER_RETRY_MAX_DELAY`) are wired into the
 container-bound client automatically.
 
-> **Fail-loud connection config.** `MAILER_BASE_URL` and `MAILER_API_TOKEN`
-> have **no working default**. Constructing the client (resolving the
-> `MailerClient` singleton, or sending the first message) with an
-> unset/empty/placeholder base URL or an empty token throws a
-> `Mailer\Sdk\Exception\MailerConfigurationException` with a clear message,
-> instead of silently sending to a dead host. Set both before sending.
+> **Connection config.** `MAILER_API_TOKEN` is **required** — an empty token
+> throws a `Mailer\Sdk\Exception\MailerConfigurationException` at construction.
+> `MAILER_BASE_URL` is **optional**: it defaults to the hosted API
+> (`https://mailer.mosaiqo.com/api/v1`), so hosted users only set the token;
+> self-hosted users override it. An explicitly empty or `api.mailer.test`
+> placeholder base URL still throws, instead of silently sending to a dead host.
 
 ### Mail transport (`MAIL_MAILER=mailer`)
 
