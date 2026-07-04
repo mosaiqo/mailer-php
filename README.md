@@ -29,7 +29,7 @@ idempotency support — plus an optional, batteries-included Laravel integration
 
 ## Requirements
 
-- PHP `>= 8.2`
+- PHP `>= 8.3`
 - `guzzlehttp/guzzle` `^7` (the only runtime dependency)
 - Laravel `^11.0 || ^12.0 || ^13.0` — **optional**, only for the Laravel
   integration (mail transport, notification channel, facade). The core SDK runs
