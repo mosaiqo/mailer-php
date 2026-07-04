@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`RetryMiddleware` caps a 429 `Retry-After`** at the configured
+  `retry_max_delay`. Previously the server-provided value was honored with no
+  upper bound, so a hostile or misconfigured `Retry-After` could block a
+  synchronous worker indefinitely. It is still honored up to the cap.
+- **`push()->register()` documents only `ios`/`android` platforms.** The
+  docblock and README previously listed `web`, but the `/push/tokens` endpoint
+  accepts native FCM device tokens only (`in:ios,android`) — web push uses the
+  separate VAPID subscription flow. A doc-following consumer passing `web`
+  received a runtime `422`. No API change; the SDK docs are now correct.
 - `composer.json` now requires PHP `>= 8.3`. The SDK has used typed class
   constants (a PHP 8.3 feature) since v1.1.0, so installs on PHP 8.2 already
   fataled on class load — the constraint now matches what actually runs

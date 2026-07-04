@@ -250,6 +250,10 @@ $removed = $client->push()->remove('jane@example.com', 'fcm-device-token');
 echo $removed->removed;    // true, or false if the contact had no such token
 ```
 
+The `platform` is the native device platform: `ios` or `android`. This endpoint
+registers **native FCM device tokens only** — web push uses a separate VAPID
+subscription flow, so `web` is not accepted here (passing it yields a `422`).
+
 Registering a token already owned by another contact in the project **moves** it
 to this contact; a contact is capped at **20 devices** (the oldest is evicted
 past the cap). Removing a token from an unknown contact raises a

@@ -135,6 +135,27 @@ final class RetryTest extends TestCase
         $this->assertCount(2, $history, 'A 429 must be retried.');
     }
 
+    public function test_429_retry_after_is_capped_at_max_delay(): void
+    {
+        // A hostile/misconfigured Retry-After of one hour must NOT block the
+        // worker: it is capped at retry_max_delay. If uncapped, honoring the
+        // header would sleep ~3600s here and hang the suite — so the elapsed
+        // time itself is the assertion.
+        $history = [];
+        $client = $this->clientWithRetry([
+            $this->jsonResponse(429, ['message' => 'Too Many Attempts.'], ['Retry-After' => '3600']),
+            $this->jsonResponse(200, ['data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1], 'links' => []]),
+        ], ['retries' => 2, 'retry_base_delay' => 1, 'retry_max_delay' => 5], $history);
+
+        $start = microtime(true);
+        $page = $client->lists()->list();
+        $elapsed = microtime(true) - $start;
+
+        $this->assertCount(0, $page->data);
+        $this->assertCount(2, $history, 'The 429 must be retried once.');
+        $this->assertLessThan(1.0, $elapsed, 'Retry-After must be capped at retry_max_delay, not honored verbatim.');
+    }
+
     public function test_retry_after_parser_handles_seconds(): void
     {
         $this->assertSame(37000, RetryMiddleware::parseRetryAfter('37'));

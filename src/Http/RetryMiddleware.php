@@ -34,7 +34,7 @@ final class RetryMiddleware
      * Supported config keys (with defaults):
      *  - `retries`          (int, 2):    maximum retry attempts.
      *  - `retry_base_delay` (int ms, 200): exponential backoff base.
-     *  - `retry_max_delay`  (int ms, 5000): backoff cap.
+     *  - `retry_max_delay`  (int ms, 5000): backoff cap (also caps a 429 Retry-After).
      *  - `retry_on_status`  (int[], 500..599): statuses to retry (429 is always retried).
      *
      * @param array<string, mixed> $config
@@ -80,7 +80,10 @@ final class RetryMiddleware
                 $retryAfter = self::parseRetryAfter($response->getHeaderLine('Retry-After'));
 
                 if ($retryAfter !== null) {
-                    return $retryAfter;
+                    // Honor the server hint, but never sleep longer than the
+                    // configured cap: a hostile or misconfigured Retry-After
+                    // must not block a synchronous worker indefinitely.
+                    return min($retryAfter, $maxDelay);
                 }
             }
 

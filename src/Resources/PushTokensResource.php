@@ -24,7 +24,11 @@ final readonly class PushTokensResource
      * token already owned by another contact in the project moves it; a
      * contact is capped at 20 devices (the oldest is evicted past the cap).
      *
-     * @param string $platform One of `ios`, `android`, `web`.
+     * This endpoint registers native FCM device tokens only. Web push uses a
+     * separate VAPID subscription endpoint, so `web` is not a valid platform
+     * here — passing it yields a 422.
+     *
+     * @param string $platform One of `ios`, `android`.
      */
     public function register(string $email, string $token, string $platform): PushTokenResult
     {
