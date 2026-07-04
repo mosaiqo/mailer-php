@@ -11,6 +11,9 @@ use Mailer\Sdk\Resources\CampaignsResource;
 use Mailer\Sdk\Resources\ContactsResource;
 use Mailer\Sdk\Resources\ListsResource;
 use Mailer\Sdk\Resources\MessagesResource;
+use Mailer\Sdk\Resources\NotificationsResource;
+use Mailer\Sdk\Resources\PushTokensResource;
+use Mailer\Sdk\Resources\SandboxResource;
 use Mailer\Sdk\Resources\SendResource;
 use Mailer\Sdk\Resources\TagsResource;
 use Mailer\Sdk\Resources\TemplatesResource;
@@ -45,6 +48,12 @@ final class MailerClient
     private ?MessagesResource $messages = null;
 
     private ?CampaignsResource $campaigns = null;
+
+    private ?NotificationsResource $notifications = null;
+
+    private ?PushTokensResource $push = null;
+
+    private ?SandboxResource $sandbox = null;
 
     /**
      * @param array<string, mixed> $options Transport/resilience options applied
@@ -129,5 +138,20 @@ final class MailerClient
     public function campaigns(): CampaignsResource
     {
         return $this->campaigns ??= new CampaignsResource($this->http);
+    }
+
+    public function notifications(): NotificationsResource
+    {
+        return $this->notifications ??= new NotificationsResource($this->http);
+    }
+
+    public function push(): PushTokensResource
+    {
+        return $this->push ??= new PushTokensResource($this->http);
+    }
+
+    public function sandbox(): SandboxResource
+    {
+        return $this->sandbox ??= new SandboxResource($this->http);
     }
 }

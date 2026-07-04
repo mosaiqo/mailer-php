@@ -42,7 +42,7 @@ The package is published on
 directly with Composer, no repository entry or Git/SSH access needed:
 
 ```bash
-composer require mosaiqo/mailer-php:^1.1
+composer require mosaiqo/mailer-php:^1.2
 ```
 
 ### Path repository (monorepo development)
@@ -74,7 +74,7 @@ down.)
 **1. Require the package** (published on Packagist):
 
 ```bash
-composer require mosaiqo/mailer-php:^1.1
+composer require mosaiqo/mailer-php:^1.2
 ```
 
 **2. Set the environment variables.**
@@ -188,6 +188,72 @@ foreach ($result->messages as $item) {
     // $item->index, $item->status (queued|suppressed|failed), $item->id, $item->code, $item->error
 }
 ```
+
+### Notifications (in-app & push)
+
+Send a notification to a contact over one or more channels. Without a `channels`
+key the SDK sends `in_app`; pass `channels` to fan out (e.g. in-app **and** push):
+
+```php
+$result = $client->notifications()->send([
+    'to' => 'jane@example.com',
+    'title' => 'Your order shipped',
+    'body' => 'Tracking #1234 is on its way.',
+    'channels' => ['in_app', 'push'], // optional; defaults to ['in_app']
+    'action_url' => 'https://app.example.com/orders/1234',
+    'variables' => ['first_name' => 'Jane'],
+]);
+
+if (! $result->anyQueued()) {
+    // Nothing could be delivered — inspect the per-channel outcomes below.
+}
+
+foreach ($result->messages as $channel) {
+    // $channel->channel, $channel->id, $channel->status, $channel->errorCode
+}
+
+$push = $result->channel('push');
+if ($push && ! $push->queued()) {
+    echo $push->errorCode; // e.g. push_provider_not_configured
+}
+```
+
+**Per-channel failures are data, not exceptions.** Each requested channel comes
+back as a `NotificationChannelResult`, so one channel failing never aborts the
+others — and when *no* channel can be queued (the API replies `422` with the
+same envelope) you still get a `NotificationResult` (`anyQueued()` is `false`)
+rather than a thrown exception. A *real* validation error (missing `title`, etc.)
+still throws `ValidationException`.
+
+| `status`              | `errorCode`                    | Meaning                                  |
+|-----------------------|--------------------------------|------------------------------------------|
+| `queued`              | —                              | Accepted for delivery on that channel.   |
+| `failed_precondition` | `push_provider_not_configured` | Push not set up for the project.         |
+| `blocked`             | `recipient_blocked`            | Recipient is suppressed/blocked.         |
+| `blocked`             | `quota_exceeded`               | Monthly email/notification quota is out. |
+| `blocked`             | `sandbox_cap_exceeded`         | Sandbox project send cap reached.        |
+
+> **Push prerequisites:** the project must have a push provider configured and
+> the contact must have at least one registered device token (see below).
+
+### Push device tokens
+
+Register and remove the device tokens push notifications are delivered to. The
+contact is upserted with transactional semantics (no double opt-in):
+
+```php
+$result = $client->push()->register('jane@example.com', 'fcm-device-token', 'android');
+echo $result->registered; // true
+echo $result->devices;    // number of push devices now on the contact
+
+$removed = $client->push()->remove('jane@example.com', 'fcm-device-token');
+echo $removed->removed;    // true, or false if the contact had no such token
+```
+
+Registering a token already owned by another contact in the project **moves** it
+to this contact; a contact is capped at **20 devices** (the oldest is evicted
+past the cap). Removing a token from an unknown contact raises a
+`NotFoundException` (`contact_not_found`).
 
 ### Idempotency
 
@@ -353,8 +419,8 @@ Every non-2xx response is mapped to a typed exception. All exceptions extend
 | Exception                 | HTTP status | Notes |
 | ------------------------- | ----------- | ----- |
 | `AuthenticationException` | 401         | Missing/invalid/expired token. |
-| `NotFoundException`       | 404         | e.g. `contact_not_found`, `template_not_found`, `message_not_found`. |
-| `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, ...). Adds `errors(): array` (field => messages). |
+| `NotFoundException`       | 404         | e.g. `contact_not_found`, `template_not_found`, `message_not_found`; a sandbox `simulate()` from a **production** token gets a bare `404` (no code). |
+| `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, sandbox `invalid_event_for_channel` / `link_index`, ...). Adds `errors(): array` (field => messages). |
 | `RateLimitException`      | 429         | Adds `retryAfter(): ?int` parsed from the `Retry-After` header. |
 | `MailerConfigurationException` | — (local) | Missing/empty/placeholder base URL or empty token; thrown at client construction before any request. |
 | `UnsupportedFeatureException` | — (local) | The send relies on something the `/send` API has no field for (e.g. attachments). |
@@ -379,6 +445,60 @@ try {
     report($e);
 }
 ```
+
+## Testing with the sandbox
+
+A **sandbox project** lets your CI exercise the real send pipeline without
+touching production data or real inboxes. The API token *is* the routing: a
+sandbox token quietly captures everything it sends and unlocks the event
+simulator; a production token can't even see the simulator (it gets a bare
+`404`). So the same code under test only needs a different `MAILER_API_TOKEN`.
+
+The recipe is: **send → read it back from `messages()` (the sandbox inbox) →
+simulate an event → assert.**
+
+```php
+// 1. Send through the code under test (sandbox token configured).
+$client->send()->email(['to' => 'jane@example.com', 'template' => 'welcome']);
+
+// 2. The sandbox captures every send — read it back like an inbox.
+$message = $client->messages()->list(['status' => 'queued'])->data[0];
+
+// 3. Drive the pipeline: simulate provider/engagement events on that message.
+$client->sandbox()->simulate($message->uuid, SandboxResource::EVENT_DELIVERED);
+$client->sandbox()->simulate($message->uuid, SandboxResource::EVENT_OPEN);
+$client->sandbox()->simulate($message->uuid, SandboxResource::EVENT_CLICK, linkIndex: 0);
+
+// 4. Assert on the resulting state.
+$refreshed = $client->messages()->get($message->uuid);
+// $refreshed->events now contains delivered / opened / clicked
+```
+
+```php
+use Mailer\Sdk\Resources\SandboxResource;
+
+// Available events (plain strings work too):
+SandboxResource::EVENT_DELIVERED;   // 'delivered'
+SandboxResource::EVENT_HARD_BOUNCE; // 'hard_bounce'
+SandboxResource::EVENT_SOFT_BOUNCE; // 'soft_bounce'
+SandboxResource::EVENT_COMPLAINT;   // 'complaint'
+SandboxResource::EVENT_OPEN;        // 'open'
+SandboxResource::EVENT_CLICK;       // 'click' — pass linkIndex or url
+SandboxResource::EVENT_READ;        // 'read'
+```
+
+Notes and safety properties:
+
+- **Webhooks fire for real, flagged `"sandbox": true`.** Outbound webhooks
+  triggered by simulated events carry a `"sandbox": true` marker so your
+  endpoint can tell test traffic apart.
+- **Simulated bounces suppress only inside the sandbox.** A `hard_bounce` /
+  `complaint` you simulate adds the address to the *sandbox* project's
+  suppression list — it never contaminates production suppression or the shared
+  platform reputation.
+- **The simulator is invisible to production tokens.** `simulate()` with a
+  production token gets a bare `404` (a `NotFoundException` with no error code),
+  so a mis-pointed token fails loudly instead of mutating real data.
 
 ## Laravel integration
 

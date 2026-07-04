@@ -20,6 +20,9 @@ use Mailer\Sdk\MailerClient;
  * @method static \Mailer\Sdk\Resources\TemplatesResource templates()
  * @method static \Mailer\Sdk\Resources\MessagesResource messages()
  * @method static \Mailer\Sdk\Resources\CampaignsResource campaigns()
+ * @method static \Mailer\Sdk\Resources\NotificationsResource notifications()
+ * @method static \Mailer\Sdk\Resources\PushTokensResource push()
+ * @method static \Mailer\Sdk\Resources\SandboxResource sandbox()
  *
  * @see \Mailer\Sdk\MailerClient
  */

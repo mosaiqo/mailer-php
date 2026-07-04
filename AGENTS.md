@@ -10,7 +10,7 @@ Terse and imperative — do exactly this. Full human reference: [README.md](READ
 1. Require the package (published on Packagist — no repo entry or Git/SSH access
    needed):
    ```bash
-   composer require mosaiqo/mailer-php:^1.1
+   composer require mosaiqo/mailer-php:^1.2
    ```
 2. Set env. Both connection vars are **REQUIRED** — there is NO default; a
    missing/empty/placeholder value throws `MailerConfigurationException` at boot
@@ -60,7 +60,18 @@ repo's own `CLAUDE.md` / `AGENTS.md`:
 
 > To send email use mailer-php — follow `vendor/mosaiqo/mailer-php/AGENTS.md`.
 
+## Other resources
+
+Beyond email sends, the client exposes:
+
+- `Mailer::notifications()->send([...])` — multichannel (in-app + push)
+  notifications; per-channel failures are DATA, not exceptions.
+- `Mailer::push()->register($email, $token, $platform)` / `->remove($email, $token)`
+  — manage device tokens for push delivery.
+- `Mailer::sandbox()->simulate($uuid, $event)` — drive the pipeline from a
+  sandbox token in CI (see **Testing with the sandbox** in [README.md](README.md)).
+
 ## More
 
 Full reference — config keys, fail-loud config, retries, error handling, batch
-sends, notification channel, facade: [README.md](README.md).
+sends, notification channel, facade, sandbox testing: [README.md](README.md).

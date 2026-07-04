@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Notifications resource** (`notifications()->send()`) — multichannel
+  (in-app + push) notification sends. The SDK always requests the per-channel
+  envelope (`in_app` is injected when no `channels` are given) and hydrates a
+  `NotificationResult` of `NotificationChannelResult`s. Per-channel failures are
+  DATA, not exceptions: the all-channels-failed `422` (which carries the same
+  `{data:{messages:[…]}}` envelope) is returned as a `NotificationResult`
+  (`anyQueued()` false), while a real validation `422` still throws
+  `ValidationException`.
+- **Push tokens resource** (`push()->register()` / `push()->remove()`) — register
+  and remove device tokens for push delivery, returning a `PushTokenResult`.
+- **Sandbox resource** (`sandbox()->simulate()`) — drive the real delivery
+  pipeline from a sandbox project's API token by simulating provider/engagement
+  events (`EVENT_DELIVERED`, `EVENT_HARD_BOUNCE`, `EVENT_SOFT_BOUNCE`,
+  `EVENT_COMPLAINT`, `EVENT_OPEN`, `EVENT_CLICK`, `EVENT_READ`) on a message,
+  returning a `SimulatedEvent`. A production token gets a bare `404`.
+- `notifications()`, `push()` and `sandbox()` accessors on the `Mailer` facade.
+
 ## [1.1.2] - 2026-06-17
 
 ### Changed
