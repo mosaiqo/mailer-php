@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-05
+
+### Added
+
+- **Attachment support on the Laravel mail transport**, with a new
+  `mailer-sdk.mail.attachments` mode **`'send'` as the default**: the message's
+  attachments are mapped onto the platform `/send` `attachments` field
+  (`filename` from the attachment — unnamed parts get `attachment` plus an
+  extension inferred from the media type —, `content_type` from the media
+  type/subtype, `content` base64-encoded). Works for inline and template sends.
+- **Per-recipient fan-out for multi-recipient sends with attachments.**
+  `/send/batch` rejects attachments (single-send only), so the transport sends
+  each recipient its own `/send` call instead. Every fan-out send gets a
+  distinct per-recipient idempotency key; an explicit
+  `X-Mailer-Idempotency-Key` override is derived per recipient
+  (`{key}:{sha1(recipient) prefix}`) so the platform never dedupes recipients
+  against each other.
+- **Local total-size guard**: when the decoded attachments of one send exceed
+  the platform's 10 MB per-send limit, the SDK throws the new
+  `Mailer\Sdk\Exception\AttachmentsTooLargeException` (error code
+  `attachments_too_large`, matching the server's `422`) *before* uploading.
+  Per-file limits and the executable-extension blocklist remain server-side.
+- Attachments now participate in the `content` idempotency key, so a requeued
+  job with the same attachments still dedupes while a changed attachment
+  produces a new key.
+- Docs: attachments section in the README (modes table, limits, filename
+  blocklist, batch behavior, the `attachments_too_large` error) and
+  `attachments` documented on `send()->email()` / prohibited on
+  `send()->batch()`.
+
+### Changed
+
+- **The default `mail.attachments` mode is now `'send'`** (was `'fail'`).
+  Consumers who relied on the fail-loud behavior — an
+  `UnsupportedFeatureException` for any message carrying an attachment — must
+  now set `MAILER_MAIL_ATTACHMENTS=fail` (or
+  `mailer-sdk.mail.attachments = 'fail'`) explicitly. `'ignore'` is unchanged.
+
 ## [1.3.1] - 2026-07-05
 
 ### Fixed
@@ -133,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (wrappable in a Laravel `LazyCollection`).
 - Read-only campaigns resource (`campaigns()->list()` / `get()` with stats).
 
-[Unreleased]: https://github.com/mosaiqo/mailer-php/compare/v1.3.1...main
+[Unreleased]: https://github.com/mosaiqo/mailer-php/compare/v1.4.0...main
+[1.4.0]: https://github.com/mosaiqo/mailer-php/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/mosaiqo/mailer-php/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/mosaiqo/mailer-php/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/mosaiqo/mailer-php/compare/v1.1.2...v1.2.0

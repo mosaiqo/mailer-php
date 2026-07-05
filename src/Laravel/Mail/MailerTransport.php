@@ -25,10 +25,13 @@ use Symfony\Component\Mime\MessageConverter;
  *
  * Behavior is documented in the README "Laravel integration" section. Key
  * decisions: From/Reply-To are ignored (the platform uses the project's
- * configured sender); attachments are unsupported (fail or ignore by config);
- * a suppressed recipient is NOT a failure (a {@see MessageSuppressed} event is
- * dispatched); quota/domain rejections ARE failures (raised as a Symfony
- * TransportException so Laravel can retry per its own policy).
+ * configured sender); attachments are mapped to the /send `attachments` field
+ * by default ('send' mode — 'fail'/'ignore' restore the legacy behavior); a
+ * multi-recipient send that carries attachments fans out as per-recipient
+ * single sends because /send/batch rejects attachments; a suppressed recipient
+ * is NOT a failure (a {@see MessageSuppressed} event is dispatched);
+ * quota/domain rejections ARE failures (raised as a Symfony TransportException
+ * so Laravel can retry per its own policy).
  */
 final class MailerTransport extends AbstractTransport
 {
@@ -44,8 +47,8 @@ final class MailerTransport extends AbstractTransport
 
     /**
      * @param array<string, mixed> $config The `mailer-sdk.mail` config block:
-     *                                      `attachments` ('fail'|'ignore') and
-     *                                      `idempotency` ('content'|'random'|'off').
+     *                                      `attachments` ('send'|'fail'|'ignore')
+     *                                      and `idempotency` ('content'|'random'|'off').
      */
     public function __construct(
         private readonly MailerClient $client,
@@ -81,6 +84,15 @@ final class MailerTransport extends AbstractTransport
 
         if (count($recipients) === 1) {
             $this->sendSingle($recipients[0], $base, $override);
+
+            return;
+        }
+
+        if (isset($base['attachments'])) {
+            // /send/batch rejects attachments (single-send only on the
+            // platform), so a multi-recipient message with attachments fans
+            // out as per-recipient single sends instead.
+            $this->sendEachSingle($recipients, $base, $override);
 
             return;
         }
@@ -154,6 +166,28 @@ final class MailerTransport extends AbstractTransport
                 0,
                 $e,
             );
+        }
+    }
+
+    /**
+     * Per-recipient single-send fan-out for messages /send/batch cannot carry
+     * (attachments). Each send computes its own per-recipient idempotency key
+     * inside {@see sendSingle()}, so a requeued job still dedupes per
+     * recipient. An explicit X-Mailer-Idempotency-Key override is derived per
+     * recipient (`{override}:{sha1(recipient) prefix}`) — reusing it verbatim
+     * would make the platform silently dedupe every recipient after the first.
+     *
+     * @param array<int, string> $recipients
+     * @param array<string, mixed> $base
+     */
+    private function sendEachSingle(array $recipients, array $base, ?string $override): void
+    {
+        foreach ($recipients as $recipient) {
+            $key = $override === null || $override === ''
+                ? $override
+                : $override.':'.substr(sha1($recipient), 0, 16);
+
+            $this->sendSingle($recipient, $base, $key);
         }
     }
 

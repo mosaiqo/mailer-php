@@ -53,8 +53,15 @@ return [
     |
     | Behavior of the "mailer" Laravel mail driver registered by this package.
     |
-    | attachments: how to handle a message that carries attachments (the
-    |   platform /send API has no attachment support).
+    | attachments: how to handle a message that carries attachments.
+    |     'send'   — (default) map them onto the /send `attachments` field
+    |                (filename, content type, base64 content). Platform limits
+    |                apply: max 10 files, 10 MB decoded per file and per send
+    |                (the SDK throws an AttachmentsTooLargeException locally
+    |                when the total exceeds the per-send cap, before uploading);
+    |                executable filename extensions are rejected server-side.
+    |                Multi-recipient sends with attachments go out as
+    |                per-recipient single sends (/send/batch rejects them).
     |     'fail'   — throw an UnsupportedFeatureException (the send fails).
     |     'ignore' — log a warning and send the message without the attachments.
     |
@@ -67,7 +74,7 @@ return [
     |
     */
     'mail' => [
-        'attachments' => env('MAILER_MAIL_ATTACHMENTS', 'fail'),
+        'attachments' => env('MAILER_MAIL_ATTACHMENTS', 'send'),
         'idempotency' => env('MAILER_MAIL_IDEMPOTENCY', 'content'),
     ],
 ];

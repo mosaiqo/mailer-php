@@ -172,6 +172,21 @@ $client->send()->email([
     'template' => 'welcome',
     'variables' => ['first_name' => 'Jane'],
 ]);
+
+// Attachments: max 10 files, 10 MB decoded per file and per send total
+// (over-total → 422 with code `attachments_too_large`); executable filename
+// extensions are rejected. Single sends only — /send/batch rejects them.
+$client->send()->email([
+    'to' => 'jane@example.com',
+    'template' => 'invoice',
+    'attachments' => [
+        [
+            'filename' => 'invoice.pdf',
+            'content_type' => 'application/pdf',
+            'content' => base64_encode($pdfBytes), // standard base64, no data: prefix
+        ],
+    ],
+]);
 ```
 
 ### Batch sends
@@ -189,6 +204,10 @@ foreach ($result->messages as $item) {
     // $item->index, $item->status (queued|suppressed|failed), $item->id, $item->code, $item->error
 }
 ```
+
+> **No attachments in batches.** `/send/batch` rejects `messages.*.attachments`
+> with a `422` — attachments are single-send only. Call `send()->email()` per
+> recipient instead (the Laravel mail transport does this fan-out for you).
 
 ### Notifications (in-app & push)
 
@@ -430,7 +449,8 @@ Every non-2xx response is mapped to a typed exception. All exceptions extend
 | `ValidationException`     | 422         | Validation failures and domain rejections (`recipient_suppressed`, `quota_exceeded`, `template_not_found`, `invalid_status_transition`, sandbox `invalid_event_for_channel` / `link_index_out_of_range`, ...). Adds `errors(): array` (field => messages). |
 | `RateLimitException`      | 429         | Adds `retryAfter(): ?int` parsed from the `Retry-After` header. |
 | `MailerConfigurationException` | — (local) | Missing/empty/placeholder base URL or empty token; thrown at client construction before any request. |
-| `UnsupportedFeatureException` | — (local) | The send relies on something the `/send` API has no field for (e.g. attachments). |
+| `UnsupportedFeatureException` | — (local) | The send relies on something the `/send` API has no field for, or that the SDK config disables (e.g. attachments with `mailer-sdk.mail.attachments = 'fail'`). |
+| `AttachmentsTooLargeException` | — (local) | The decoded attachments of one send exceed the 10 MB total limit; thrown before any upload. `getErrorCode()` is `attachments_too_large`, the same code the server returns for the 422. |
 | `MailerException`         | any other   | Base class; also the catch-all for unexpected non-2xx statuses. |
 
 ```php
@@ -537,7 +557,7 @@ MAILER_RETRY_BASE_DELAY=200
 MAILER_RETRY_MAX_DELAY=5000
 
 # Mail transport behavior
-MAILER_MAIL_ATTACHMENTS=fail        # fail | ignore
+MAILER_MAIL_ATTACHMENTS=send        # send | fail | ignore
 MAILER_MAIL_IDEMPOTENCY=content     # content | random | off
 ```
 
@@ -628,6 +648,40 @@ class WelcomeMail extends Mailable
 }
 ```
 
+#### Attachments
+
+Attachments on a Mailable / Symfony message are mapped onto the `/send`
+`attachments` field and delivered by the platform. The behavior is driven by
+`mailer-sdk.mail.attachments` (env `MAILER_MAIL_ATTACHMENTS`):
+
+| Mode | Behavior |
+| ---- | -------- |
+| `send` (default) | Map each attachment to `{filename, content_type, content(base64)}` and send it. An unnamed attachment gets the filename `attachment` plus an extension inferred from its media type (e.g. `attachment.pdf`). |
+| `fail` | Throw `Mailer\Sdk\Exception\UnsupportedFeatureException` — the pre-1.4 fail-loud behavior for apps that never want attachments to leave through this transport. |
+| `ignore` | Log a warning and send the message *without* the attachments. |
+
+Platform limits (validated server-side, one guard duplicated client-side):
+
+- **Max 10 files per send**, **10 MB decoded per file** and **~10 MB decoded
+  total per send**. The SDK checks the *total* before uploading and throws a
+  local `Mailer\Sdk\Exception\AttachmentsTooLargeException` (error code
+  `attachments_too_large` — the same code the server's `422` carries), so an
+  oversized send fails fast instead of uploading megabytes of base64 first.
+  Per-file size, filename and content-type validation stay server-side.
+- **Executable filename extensions are rejected** by the API with a `422` field
+  error (`.exe`, `.bat`, `.cmd`, `.com`, `.cpl`, `.dll`, `.jar`, `.js`, `.jse`,
+  `.lnk`, `.msi`, `.pif`, `.scr`, `.vbs`, `.vbe`, `.wsf`, `.wsh`, `.ps1`,
+  `.msc`, `.hta`, `.reg`), as are filenames with path separators or control
+  characters.
+- **Batch sends**: the `/send/batch` endpoint rejects attachments (single-send
+  only), so a multi-recipient message carrying attachments is automatically
+  fanned out as **per-recipient single `/send` calls**. Each fan-out send gets
+  its own per-recipient idempotency key (attachments hash into the content
+  key), so a requeued job still dedupes; an explicit
+  `X-Mailer-Idempotency-Key` is derived per recipient
+  (`{key}:{sha1(recipient) prefix}`) for the same reason. Expect N API calls
+  (and N ratelimit slots) instead of one batch call.
+
 #### Behavior & limitations
 
 The platform `/send` API is intentionally narrow; the transport adapts to it
@@ -637,13 +691,11 @@ with explicit, documented behavior rather than silent surprises.
   — the platform always uses the project's configured sender (set the project
   `default_from_email`/`default_from_name` and a verified sending domain in the
   dashboard). A `From` set on the message is logged at debug level and dropped.
-- **Attachments are not supported.** The `/send` API has no attachment field.
-  By default (`mailer-sdk.mail.attachments = 'fail'`, env
-  `MAILER_MAIL_ATTACHMENTS`) a message carrying an attachment throws
-  `Mailer\Sdk\Exception\UnsupportedFeatureException`, so the send fails loudly
-  and you fix the Mailable. Set it to `'ignore'` to log a warning and send the
-  message *without* the attachments. Attachments are never dropped silently in
-  `'fail'` mode.
+- **Attachments are sent by default.** They are mapped onto the `/send`
+  `attachments` field (see **Attachments** above for modes, limits, the
+  filename blocklist and the batch fan-out). Consumers who relied on the old
+  fail-loud behavior must set `mailer-sdk.mail.attachments = 'fail'`
+  explicitly; `'ignore'` still drops them with a warning — never silently.
 - **Suppressed recipients are not failures.** When the platform rejects an
   address as suppressed (`recipient_suppressed`), the transport does **not**
   throw: it logs a warning and dispatches a
@@ -658,7 +710,9 @@ with explicit, documented behavior rather than silent surprises.
   hard-fails, summarizing the failed recipients.
 - **Multiple recipients become a batch.** To + Cc + Bcc are merged into the
   delivery list; each recipient is sent its own copy via `/send/batch` (the
-  message content is shared, the `to` differs per item).
+  message content is shared, the `to` differs per item). Exception: a message
+  carrying attachments fans out as per-recipient single `/send` calls, because
+  the batch endpoint rejects attachments (see **Attachments** above).
 - **Idempotency is automatic and retry-safe.** Per send the transport sets an
   `Idempotency-Key` derived from `mailer-sdk.mail.idempotency` (env
   `MAILER_MAIL_IDEMPOTENCY`):
@@ -705,10 +759,12 @@ return (new MailerMessage)
 public `$email` property on the notifiable.
 
 **Other return types** are accepted too: a plain `/send` payload `array` is used
-directly (its `to`/`idempotency_key` keys are honored), and an
-`Illuminate\Contracts\Mail\Mailable` is rendered to its subject + HTML only —
-return a `MailerMessage` for templates, a text part or an explicit idempotency
-key.
+directly (its `to`/`idempotency_key` keys are honored, and an `attachments` key
+passes through to the API — see **Attachments** above for shape and limits),
+and an `Illuminate\Contracts\Mail\Mailable` is rendered to its subject + HTML
+only (its attachments are NOT carried over) — return a `MailerMessage` for
+templates, a text part or an explicit idempotency key, or the array form for
+attachments.
 
 The outcome semantics mirror the transport: a **suppressed recipient is not a
 failure** — a `Mailer\Sdk\Laravel\Events\MessageSuppressed` event is dispatched

@@ -21,9 +21,15 @@ final readonly class SendResource
     /**
      * Send a single transactional email (POST /send).
      *
+     * The payload is passed through as-is, so every /send field works,
+     * including `attachments`: an array (max 10) of `{filename, content_type,
+     * content}` objects where `content` is standard base64 (limits: 10 MB
+     * decoded per file and per send — the latter rejected with a 422 and code
+     * `attachments_too_large`; executable filename extensions are refused).
+     *
      * @param array<string, mixed> $payload `to` plus either `template` or
      *                                       `subject`+`body`, optional `text`,
-     *                                       `variables`.
+     *                                       `variables`, `attachments`.
      */
     public function email(array $payload, ?string $idempotencyKey = null): SentMessage
     {
@@ -40,6 +46,10 @@ final readonly class SendResource
 
     /**
      * Send a batch of transactional emails (POST /send/batch).
+     *
+     * The batch endpoint rejects `attachments` on any message (422) — the
+     * field is single-send only; use {@see email()} per recipient instead
+     * (the Laravel mail transport does that fan-out automatically).
      *
      * @param array<int, array<string, mixed>> $messages 1-100 message payloads.
      */

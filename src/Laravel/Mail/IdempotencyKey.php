@@ -59,6 +59,7 @@ final class IdempotencyKey
             'text' => $payload['text'] ?? null,
             'template' => $payload['template'] ?? null,
             'variables' => $payload['variables'] ?? null,
+            'attachments' => $payload['attachments'] ?? null,
             'to' => $payload['to'] ?? null,
         ];
 

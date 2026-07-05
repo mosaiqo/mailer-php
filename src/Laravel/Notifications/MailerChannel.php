@@ -109,7 +109,8 @@ final class MailerChannel
      *
      * A Mailable is rendered to its HTML body + subject only; attachments,
      * text-only Mailables and template headers set via withSymfonyMessage() are
-     * not honored through the channel — return a MailerMessage for full control.
+     * not honored through the channel — return a MailerMessage for full control,
+     * or a payload array to pass /send fields (including `attachments`) as-is.
      *
      * @param mixed $message
      *
